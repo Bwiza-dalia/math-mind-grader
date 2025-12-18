@@ -22,6 +22,12 @@ python -c "import fastapi; import uvicorn; print('✓ FastAPI and Uvicorn import
     exit 1
 }
 
-echo "Starting uvicorn server..."
-exec uvicorn api:app --host 0.0.0.0 --port ${PORT:-8000} --log-level info
+# Ensure PORT is set
+if [ -z "$PORT" ]; then
+    echo "WARNING: PORT not set, using 8000"
+    export PORT=8000
+fi
+
+echo "Starting uvicorn server on port $PORT..."
+exec python -m uvicorn api:app --host 0.0.0.0 --port $PORT --log-level info
 
