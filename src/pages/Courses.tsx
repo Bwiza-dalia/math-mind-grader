@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { mockCourses, mockExams } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,12 +12,26 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
 export default function Courses() {
   const [searchQuery, setSearchQuery] = useState('');
 
-  const filteredCourses = mockCourses.filter(
-    (course) =>
+  // Fetch courses
+  const { data: courses, isLoading } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => api.courses.getAll(),
+  });
+
+  // Fetch exams
+  const { data: exams } = useQuery({
+    queryKey: ['exams'],
+    queryFn: () => api.exams.getAll(),
+  });
+
+  const filteredCourses = (courses || []).filter(
+    (course: any) =>
       course.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       course.code.toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -52,9 +65,14 @@ export default function Courses() {
         </div>
 
         {/* Courses Grid */}
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredCourses.map((course, index) => {
-            const courseExams = mockExams.filter((e) => e.courseId === course.id);
+        {isLoading ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Loading courses...</p>
+          </div>
+        ) : (
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredCourses.map((course: any, index: number) => {
+              const courseExams = (exams || []).filter((e: any) => e.courseId === course.id);
             return (
               <Card
                 key={course.id}
@@ -92,22 +110,25 @@ export default function Courses() {
                   <div className="flex items-center gap-4 text-sm text-muted-foreground">
                     <div className="flex items-center gap-1.5">
                       <Users className="h-4 w-4" />
-                      <span>{course.students.length} students</span>
+                      <span>{course.enrolledStudents?.length || 0} students</span>
                     </div>
                     <div className="flex items-center gap-1.5">
                       <FileText className="h-4 w-4" />
-                      <span>{courseExams.length} exams</span>
+                      <span>{course.examCount || 0} exams</span>
                     </div>
                   </div>
                 </CardContent>
               </Card>
             );
-          })}
-        </div>
+            })}
+          </div>
+        )}
 
-        {filteredCourses.length === 0 && (
+        {!isLoading && filteredCourses.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-muted-foreground">No courses found</p>
+            <p className="text-muted-foreground">
+              {searchQuery ? 'No courses found matching your search' : 'No courses yet. Create your first course!'}
+            </p>
           </div>
         )}
       </div>

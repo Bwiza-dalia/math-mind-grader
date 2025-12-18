@@ -1,12 +1,14 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { mockCourses } from '@/data/mockData';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Select,
   SelectContent,
@@ -14,277 +16,287 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Trash2, GripVertical, Save } from 'lucide-react';
-import { useToast } from '@/hooks/use-toast';
-
-interface QuestionForm {
-  id: string;
-  text: string;
-  points: number;
-  goldSolutionSteps: { description: string; expression: string; points: number }[];
-  finalAnswer: string;
-}
+import { Save, ArrowLeft } from 'lucide-react';
+import { toast } from 'sonner';
+import { QuestionBuilder, Question } from '@/components/exam-builder/QuestionBuilder';
 
 export default function CreateExam() {
   const navigate = useNavigate();
-  const { toast } = useToast();
+  const { token } = useAuth();
+  const [searchParams] = useSearchParams();
+  const examId = searchParams.get('examId');
+  const isEditMode = !!examId;
   
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [courseId, setCourseId] = useState('');
-  const [questions, setQuestions] = useState<QuestionForm[]>([
-    { id: '1', text: '', points: 10, goldSolutionSteps: [{ description: '', expression: '', points: 5 }], finalAnswer: '' }
-  ]);
+  const [duration, setDuration] = useState(120);
+  const [questions, setQuestions] = useState<Question[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-  const addQuestion = () => {
-    setQuestions([
-      ...questions,
-      {
-        id: String(questions.length + 1),
-        text: '',
-        points: 10,
-        goldSolutionSteps: [{ description: '', expression: '', points: 5 }],
-        finalAnswer: '',
-      },
-    ]);
-  };
+  // Fetch courses
+  const { data: courses = [] } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => api.courses.getAll(),
+    enabled: !!token,
+  });
 
-  const removeQuestion = (index: number) => {
-    setQuestions(questions.filter((_, i) => i !== index));
-  };
+  // Fetch exam data if editing
+  const { data: examData } = useQuery({
+    queryKey: ['exam', examId],
+    queryFn: () => api.exams.getById(examId!),
+    enabled: !!examId && !!token,
+  });
 
-  const updateQuestion = (index: number, field: keyof QuestionForm, value: any) => {
-    const updated = [...questions];
-    updated[index] = { ...updated[index], [field]: value };
-    setQuestions(updated);
-  };
-
-  const addStep = (questionIndex: number) => {
-    const updated = [...questions];
-    updated[questionIndex].goldSolutionSteps.push({ description: '', expression: '', points: 5 });
-    setQuestions(updated);
-  };
-
-  const removeStep = (questionIndex: number, stepIndex: number) => {
-    const updated = [...questions];
-    updated[questionIndex].goldSolutionSteps = updated[questionIndex].goldSolutionSteps.filter((_, i) => i !== stepIndex);
-    setQuestions(updated);
-  };
-
-  const updateStep = (questionIndex: number, stepIndex: number, field: string, value: any) => {
-    const updated = [...questions];
-    updated[questionIndex].goldSolutionSteps[stepIndex] = {
-      ...updated[questionIndex].goldSolutionSteps[stepIndex],
-      [field]: value,
+  // Transform API question format to Question format
+  const transformApiQuestionToQuestion = (apiQ: any, number: number, parentId?: string): Question => {
+    return {
+      id: apiQ.id || crypto.randomUUID(),
+      number: number,
+      text: apiQ.text || '',
+      richContent: apiQ.richContent || null,
+      questionType: apiQ.questionType || 'standard',
+      points: apiQ.points || 10,
+      subQuestions: (apiQ.subQuestions || []).map((sub: any, idx: number) =>
+        transformApiQuestionToQuestion(sub, idx + 1, apiQ.id)
+      ),
+      attachments: apiQ.attachments || [],
+      embeddedContent: apiQ.embeddedContent || [],
+      theories: apiQ.theories || [],
+      goldSolutionSteps: (apiQ.goldSolutionSteps || []).map((step: any) => ({
+        stepNumber: step.stepNumber || 0,
+        description: step.description || '',
+        expression: step.expression || '',
+        latex: step.latex || '',
+        points: step.points || 5,
+        required: step.required !== false,
+      })),
+      finalAnswer: apiQ.finalAnswer || '',
+      finalAnswerLatex: apiQ.finalAnswerLatex || '',
+      outlineLevel: apiQ.outlineLevel || 1,
+      parentQuestionId: parentId,
     };
-    setQuestions(updated);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Load exam data when editing
+  useEffect(() => {
+    if (examData && isEditMode) {
+      setIsLoading(true);
+      setTitle(examData.title || '');
+      setDescription(examData.description || '');
+      setCourseId(examData.courseId || '');
+      setDuration(examData.duration || 120);
+      
+      // Transform questions
+      const transformedQuestions = (examData.questions || []).map((q: any, idx: number) =>
+        transformApiQuestionToQuestion(q, idx + 1)
+      );
+      setQuestions(transformedQuestions);
+      setIsLoading(false);
+    }
+  }, [examData, isEditMode]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    toast({
-      title: 'Exam created!',
-      description: 'Your exam has been saved successfully.',
-    });
-    navigate('/exams');
+    
+    if (!title || !courseId || questions.length === 0) {
+      toast.error('Please fill in all required fields and add at least one question');
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      // Transform questions to API format
+      const examData = {
+        title,
+        description,
+        courseId,
+        duration,
+        questions: questions.map((q, idx) => ({
+          number: idx + 1,
+          text: q.text,
+          points: q.points,
+          questionType: q.questionType,
+          richContent: q.richContent,
+          outlineLevel: q.outlineLevel,
+          parentQuestionId: q.parentQuestionId,
+          subQuestions: q.subQuestions.map((sub, subIdx) => ({
+            number: subIdx + 1,
+            text: sub.text,
+            points: sub.points,
+            richContent: sub.richContent,
+            goldSolutionSteps: sub.goldSolutionSteps.map((step, stepIdx) => ({
+              stepNumber: stepIdx + 1,
+              description: step.description,
+              expression: step.expression,
+              latex: step.latex,
+              points: step.points,
+              required: step.required,
+            })),
+            finalAnswer: sub.finalAnswer,
+            finalAnswerLatex: sub.finalAnswerLatex,
+          })),
+          attachments: q.attachments,
+          embeddedContent: q.embeddedContent,
+          theories: q.theories,
+          goldSolutionSteps: q.goldSolutionSteps.map((step, stepIdx) => ({
+            stepNumber: stepIdx + 1,
+            description: step.description,
+            expression: step.expression,
+            latex: step.latex,
+            points: step.points,
+            required: step.required,
+          })),
+          finalAnswer: q.finalAnswer,
+          finalAnswerLatex: q.finalAnswerLatex,
+        })),
+      };
+
+      if (isEditMode && examId) {
+        await api.exams.update(examId, examData);
+        toast.success('Exam updated successfully!');
+      } else {
+        await api.exams.create(examData);
+        toast.success('Exam created successfully!');
+      }
+      navigate('/exams');
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to create exam');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  const totalPoints = questions.reduce((sum, q) => sum + q.points, 0);
+  const totalPoints = questions.reduce((sum, q) => {
+    const subPoints = q.subQuestions?.reduce((subSum, sub) => subSum + sub.points, 0) || 0;
+    return sum + q.points + subPoints;
+  }, 0);
+
+  if (isLoading && isEditMode) {
+    return (
+      <DashboardLayout>
+        <div className="flex items-center justify-center h-64">
+          <p>Loading exam data...</p>
+        </div>
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout>
-      <form onSubmit={handleSubmit} className="space-y-6 max-w-4xl">
+      <div className="flex flex-col h-[calc(100vh-120px)]">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Create Exam</h1>
-            <p className="text-muted-foreground mt-1">Define questions and gold solutions for automatic grading</p>
-          </div>
-          <Button type="submit" size="lg">
-            <Save className="h-4 w-4 mr-2" />
-            Save Exam
-          </Button>
-        </div>
-
-        {/* Basic Info */}
-        <Card className="animate-fade-up">
-          <CardHeader>
-            <CardTitle className="text-lg">Exam Details</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="title">Exam Title</Label>
-                <Input
-                  id="title"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
-                  placeholder="e.g., Midterm Exam"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="course">Course</Label>
-                <Select value={courseId} onValueChange={setCourseId} required>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a course" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {mockCourses.map((course) => (
-                      <SelectItem key={course.id} value={course.id}>
-                        {course.code} - {course.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="description">Description (optional)</Label>
-              <Textarea
-                id="description"
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
-                placeholder="Brief description of exam content..."
-                rows={2}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Questions */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold">Questions</h2>
-            <span className="text-sm text-muted-foreground font-mono">
-              Total: {totalPoints} points
-            </span>
-          </div>
-
-          {questions.map((question, qIndex) => (
-            <Card key={question.id} className="animate-fade-up" style={{ animationDelay: `${qIndex * 50}ms` }}>
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <GripVertical className="h-5 w-5 text-muted-foreground cursor-grab" />
-                    <CardTitle className="text-base">Question {qIndex + 1}</CardTitle>
+        <div className="flex-none p-6 border-b bg-background">
+          <form onSubmit={handleSubmit}>
+            <div className="flex items-start justify-between gap-6">
+              <div className="flex-1 max-w-2xl space-y-4">
+                <div className="flex items-center gap-3">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => navigate('/exams')}
+                  >
+                    <ArrowLeft className="h-4 w-4" />
+                  </Button>
+                  <div>
+                    <h1 className="text-3xl font-bold tracking-tight">
+                      {isEditMode ? 'Edit Exam' : 'Create Exam'}
+                    </h1>
+                    <p className="text-muted-foreground mt-1">
+                      {isEditMode
+                        ? 'Update your exam questions and solutions'
+                        : 'Enhanced question builder with scientific tools'}
+                    </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label htmlFor="title">Exam Title</Label>
                     <Input
+                      id="title"
+                      value={title}
+                      onChange={(e) => setTitle(e.target.value)}
+                      placeholder="e.g., Midterm Exam - Physics"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="course">Course</Label>
+                    <Select value={courseId} onValueChange={setCourseId} required>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select a course" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {courses.map((course) => (
+                          <SelectItem key={course.id} value={course.id}>
+                            {course.code} - {course.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="description">Description (optional)</Label>
+                    <Textarea
+                      id="description"
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      placeholder="Brief description of exam content..."
+                      rows={2}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="duration">Duration (minutes)</Label>
+                    <Input
+                      id="duration"
                       type="number"
-                      value={question.points}
-                      onChange={(e) => updateQuestion(qIndex, 'points', parseInt(e.target.value) || 0)}
-                      className="w-20 h-8 text-center"
+                      value={duration}
+                      onChange={(e) => setDuration(parseInt(e.target.value) || 120)}
                       min={1}
                     />
-                    <span className="text-sm text-muted-foreground">pts</span>
-                    {questions.length > 1 && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 text-destructive"
-                        onClick={() => removeQuestion(qIndex)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    )}
                   </div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Question Text</Label>
-                  <Textarea
-                    value={question.text}
-                    onChange={(e) => updateQuestion(qIndex, 'text', e.target.value)}
-                    placeholder="Enter the question..."
-                    rows={2}
-                    required
-                  />
-                </div>
+              </div>
 
-                {/* Gold Solution Steps */}
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">Gold Solution Steps</Label>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addStep(qIndex)}
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add Step
-                    </Button>
+              <div className="flex-none space-y-3">
+                <Card className="p-4">
+                  <div className="text-center space-y-1">
+                    <p className="text-sm text-muted-foreground">Total Points</p>
+                    <p className="text-3xl font-bold">{totalPoints}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {questions.length} {questions.length === 1 ? 'question' : 'questions'}
+                    </p>
                   </div>
-                  
-                  <div className="space-y-2">
-                    {question.goldSolutionSteps.map((step, sIndex) => (
-                      <div key={sIndex} className="flex gap-2 items-start p-3 rounded-lg bg-muted/50">
-                        <span className="text-xs font-medium text-muted-foreground mt-2 w-6">
-                          {sIndex + 1}.
-                        </span>
-                        <div className="flex-1 grid gap-2 sm:grid-cols-3">
-                          <Input
-                            value={step.description}
-                            onChange={(e) => updateStep(qIndex, sIndex, 'description', e.target.value)}
-                            placeholder="Step description"
-                            className="h-9"
-                          />
-                          <Input
-                            value={step.expression}
-                            onChange={(e) => updateStep(qIndex, sIndex, 'expression', e.target.value)}
-                            placeholder="Expression (e.g., 3x² + 2x)"
-                            className="h-9 font-mono"
-                          />
-                          <div className="flex gap-2">
-                            <Input
-                              type="number"
-                              value={step.points}
-                              onChange={(e) => updateStep(qIndex, sIndex, 'points', parseInt(e.target.value) || 0)}
-                              className="h-9 w-20"
-                              min={0}
-                            />
-                            {question.goldSolutionSteps.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="h-9 w-9 text-destructive"
-                                onClick={() => removeStep(qIndex, sIndex)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Final Answer */}
-                <div className="space-y-2">
-                  <Label>Final Answer</Label>
-                  <Input
-                    value={question.finalAnswer}
-                    onChange={(e) => updateQuestion(qIndex, 'finalAnswer', e.target.value)}
-                    placeholder="Expected final answer (e.g., x = 5)"
-                    className="font-mono"
-                    required
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-
-          <Button type="button" variant="outline" onClick={addQuestion} className="w-full">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Question
-          </Button>
+                </Card>
+                <Button type="submit" size="lg" className="w-full" disabled={isSaving || isLoading}>
+                  <Save className="h-4 w-4 mr-2" />
+                  {isSaving
+                    ? isEditMode
+                      ? 'Updating...'
+                      : 'Creating...'
+                    : isEditMode
+                    ? 'Update Exam'
+                    : 'Save Exam'}
+                </Button>
+              </div>
+            </div>
+          </form>
         </div>
-      </form>
+
+        {/* Question Builder */}
+        <div className="flex-1 overflow-hidden">
+          <QuestionBuilder
+            questions={questions}
+            onQuestionsChange={setQuestions}
+          />
+        </div>
+      </div>
     </DashboardLayout>
   );
 }

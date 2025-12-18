@@ -1,6 +1,5 @@
 import { useState, useCallback } from 'react';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { mockExams, mockCourses } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -13,14 +12,49 @@ import {
 import { Upload, Image, X, CheckCircle2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
 export default function SubmitExam() {
   const [selectedExam, setSelectedExam] = useState<string>('');
   const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  // Fetch exams
+  const { data: exams, isLoading: examsLoading } = useQuery({
+    queryKey: ['exams'],
+    queryFn: () => api.exams.getAll(),
+  });
+
+  // Fetch courses
+  const { data: courses } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => api.courses.getAll(),
+  });
+
+  // Submit mutation
+  const submitMutation = useMutation({
+    mutationFn: ({ examId, images }: { examId: string; images: File[] }) =>
+      api.submissions.submit(examId, images),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      setIsSubmitted(true);
+      toast({
+        title: 'Submission successful!',
+        description: 'Your exam has been submitted for grading.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Submission failed',
+        description: error.message || 'Failed to submit exam',
+        variant: 'destructive',
+      });
+    },
+  });
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -55,16 +89,7 @@ export default function SubmitExam() {
       return;
     }
 
-    setIsSubmitting(true);
-    // Simulate submission
-    await new Promise((resolve) => setTimeout(resolve, 2000));
-    setIsSubmitting(false);
-    setIsSubmitted(true);
-    
-    toast({
-      title: 'Submission successful!',
-      description: 'Your exam has been submitted for grading.',
-    });
+    submitMutation.mutate({ examId: selectedExam, images: uploadedFiles });
   };
 
   if (isSubmitted) {
@@ -117,14 +142,20 @@ export default function SubmitExam() {
                 <SelectValue placeholder="Select an exam" />
               </SelectTrigger>
               <SelectContent>
-                {mockExams.map((exam) => {
-                  const course = mockCourses.find((c) => c.id === exam.courseId);
-                  return (
-                    <SelectItem key={exam.id} value={exam.id}>
-                      {exam.title} ({course?.code})
-                    </SelectItem>
-                  );
-                })}
+                {examsLoading ? (
+                  <SelectItem value="loading" disabled>Loading exams...</SelectItem>
+                ) : (exams || []).length === 0 ? (
+                  <SelectItem value="none" disabled>No exams available</SelectItem>
+                ) : (
+                  (exams || []).map((exam: any) => {
+                    const course = (courses || []).find((c: any) => c.id === exam.courseId);
+                    return (
+                      <SelectItem key={exam.id} value={exam.id}>
+                        {exam.title} {course ? `(${course.code})` : ''}
+                      </SelectItem>
+                    );
+                  })
+                )}
               </SelectContent>
             </Select>
           </CardContent>
@@ -207,10 +238,10 @@ export default function SubmitExam() {
         {/* Submit Button */}
         <Button
           onClick={handleSubmit}
-          disabled={!selectedExam || uploadedFiles.length === 0 || isSubmitting}
+          disabled={!selectedExam || uploadedFiles.length === 0 || submitMutation.isPending}
           className="w-full h-12 text-base font-semibold"
         >
-          {isSubmitting ? (
+          {submitMutation.isPending ? (
             <>
               <div className="h-4 w-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin mr-2" />
               Submitting...

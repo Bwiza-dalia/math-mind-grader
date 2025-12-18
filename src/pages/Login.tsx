@@ -22,10 +22,15 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    login(email, password, selectedRole);
-    navigate('/dashboard');
+    try {
+      await login(email, password, selectedRole);
+      navigate('/dashboard');
+    } catch (error) {
+      // Error is already handled by AuthContext with toast
+      console.error('Login error:', error);
+    }
   };
 
   return (
@@ -36,7 +41,7 @@ export default function Login() {
           <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl bg-primary shadow-glow mb-4">
             <GraduationCap className="h-8 w-8 text-primary-foreground" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight">MathGrade</h1>
+          <h1 className="text-3xl font-bold tracking-tight">EasyGrade</h1>
           <p className="text-muted-foreground mt-2">AI-Powered Exam Grading System</p>
         </div>
 

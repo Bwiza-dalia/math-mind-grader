@@ -2,21 +2,40 @@ import { useAuth } from '@/contexts/AuthContext';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { StatsCard } from '@/components/dashboard/StatsCard';
 import { RecentSubmissions } from '@/components/dashboard/RecentSubmissions';
-import { mockProfessorStats, mockStudentStats, mockAdminStats, mockSubmissions, mockCourses, mockExams } from '@/data/mockData';
 import { BookOpen, FileText, ClipboardList, Clock, TrendingUp, Users, GraduationCap } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
 export default function Dashboard() {
   const { user } = useAuth();
 
-  const stats = user?.role === 'professor' 
-    ? mockProfessorStats 
-    : user?.role === 'student' 
-    ? mockStudentStats 
-    : mockAdminStats;
+  // Fetch dashboard stats
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ['dashboard', 'stats'],
+    queryFn: () => api.dashboard.getStats(),
+    enabled: !!user,
+  });
+
+  // Fetch recent submissions
+  const { data: submissionsData, isLoading: submissionsLoading } = useQuery({
+    queryKey: ['submissions'],
+    queryFn: () => api.submissions.getAll(),
+    enabled: !!user,
+  });
+
+  // Fetch courses
+  const { data: coursesData, isLoading: coursesLoading } = useQuery({
+    queryKey: ['courses'],
+    queryFn: () => api.courses.getAll(),
+    enabled: !!user && user.role === 'professor',
+  });
+
+  const recentSubmissions = submissionsData?.slice(0, 5) || [];
+  const courses = coursesData || [];
 
   return (
     <DashboardLayout>
@@ -35,24 +54,24 @@ export default function Dashboard() {
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           <StatsCard
             title="Total Courses"
-            value={stats.totalCourses}
+            value={statsLoading ? '...' : stats?.totalCourses || 0}
             icon={BookOpen}
             variant="primary"
           />
           <StatsCard
             title="Total Exams"
-            value={stats.totalExams}
+            value={statsLoading ? '...' : stats?.totalExams || 0}
             icon={FileText}
             variant="accent"
           />
           <StatsCard
             title="Submissions"
-            value={stats.totalSubmissions}
+            value={statsLoading ? '...' : stats?.totalSubmissions || 0}
             icon={ClipboardList}
           />
           <StatsCard
             title="Pending Grading"
-            value={stats.pendingGrading}
+            value={statsLoading ? '...' : stats?.pendingGrading || 0}
             icon={Clock}
             variant="warning"
           />
@@ -62,13 +81,21 @@ export default function Dashboard() {
         <div className="grid gap-6 lg:grid-cols-3">
           {/* Recent Submissions - Takes 2 columns */}
           <div className="lg:col-span-2">
-            <RecentSubmissions submissions={mockSubmissions.slice(0, 5)} />
+            {submissionsLoading ? (
+              <Card>
+                <CardContent className="p-6">
+                  <p className="text-muted-foreground">Loading submissions...</p>
+                </CardContent>
+              </Card>
+            ) : (
+              <RecentSubmissions submissions={recentSubmissions} />
+            )}
           </div>
 
           {/* Right Column */}
           <div className="space-y-6">
             {/* Average Score Card */}
-            {stats.averageScore && (
+            {stats?.averageScore && (
               <Card className="animate-fade-up">
                 <CardHeader className="pb-2">
                   <CardTitle className="text-base font-medium flex items-center gap-2">
@@ -78,8 +105,8 @@ export default function Dashboard() {
                 </CardHeader>
                 <CardContent>
                   <div className="flex items-end gap-2 mb-3">
-                    <span className="text-4xl font-bold">{stats.averageScore}</span>
-                    <span className="text-muted-foreground mb-1">/ 100</span>
+                    <span className="text-4xl font-bold">{stats.averageScore.toFixed(1)}</span>
+                    <span className="text-muted-foreground mb-1">%</span>
                   </div>
                   <Progress value={stats.averageScore} className="h-2" />
                 </CardContent>
@@ -153,16 +180,22 @@ export default function Dashboard() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  {mockCourses.slice(0, 3).map((course) => (
-                    <Link
-                      key={course.id}
-                      to={`/courses/${course.id}`}
-                      className="block p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
-                    >
-                      <p className="font-medium text-sm">{course.name}</p>
-                      <p className="text-xs text-muted-foreground">{course.code} • {course.students.length} students</p>
-                    </Link>
-                  ))}
+                  {coursesLoading ? (
+                    <p className="text-sm text-muted-foreground">Loading courses...</p>
+                  ) : courses.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">No courses yet. Create your first course!</p>
+                  ) : (
+                    courses.slice(0, 3).map((course: any) => (
+                      <Link
+                        key={course.id}
+                        to={`/courses/${course.id}`}
+                        className="block p-3 rounded-lg bg-muted/50 hover:bg-muted transition-colors"
+                      >
+                        <p className="font-medium text-sm">{course.name}</p>
+                        <p className="text-xs text-muted-foreground">{course.code} • {course.students?.length || 0} students</p>
+                      </Link>
+                    ))
+                  )}
                 </CardContent>
               </Card>
             )}

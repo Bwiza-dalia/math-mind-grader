@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { mockSubmissions, mockExams } from '@/data/mockData';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -23,18 +22,31 @@ import {
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
+import { useQuery } from '@tanstack/react-query';
+import { api } from '@/api/client';
 
 export default function Submissions() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
 
-  const filteredSubmissions = mockSubmissions.filter((submission) => {
-    const matchesSearch = submission.studentName.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesStatus = statusFilter === 'all' || submission.status === statusFilter;
-    return matchesSearch && matchesStatus;
+  // Fetch submissions
+  const { data: submissions, isLoading, refetch } = useQuery({
+    queryKey: ['submissions', statusFilter],
+    queryFn: () => api.submissions.getAll({ status: statusFilter !== 'all' ? statusFilter : undefined }),
   });
 
-  const getExam = (examId: string) => mockExams.find((e) => e.id === examId);
+  // Fetch exams
+  const { data: exams } = useQuery({
+    queryKey: ['exams'],
+    queryFn: () => api.exams.getAll(),
+  });
+
+  const filteredSubmissions = (submissions || []).filter((submission: any) => {
+    const matchesSearch = submission.studentName.toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
+  });
+
+  const getExam = (examId: string) => (exams || []).find((e: any) => e.id === examId);
 
   const statusConfig = {
     pending: { label: 'Pending', icon: Clock, className: 'bg-warning/10 text-warning border-warning/20' },
@@ -76,20 +88,31 @@ export default function Submissions() {
         </div>
 
         {/* Submissions Table */}
-        <div className="rounded-xl border bg-card overflow-hidden">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead>Student</TableHead>
-                <TableHead>Exam</TableHead>
-                <TableHead>Submitted</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Score</TableHead>
-                <TableHead className="w-[100px]">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredSubmissions.map((submission) => {
+        {isLoading ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">Loading submissions...</p>
+          </div>
+        ) : filteredSubmissions.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-muted-foreground">
+              {searchQuery ? 'No submissions found matching your search' : 'No submissions yet'}
+            </p>
+          </div>
+        ) : (
+          <div className="rounded-xl border bg-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>Student</TableHead>
+                  <TableHead>Exam</TableHead>
+                  <TableHead>Submitted</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Score</TableHead>
+                  <TableHead className="w-[100px]">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredSubmissions.map((submission: any) => {
                 const exam = getExam(submission.examId);
                 const status = statusConfig[submission.status];
                 const StatusIcon = status.icon;
@@ -109,7 +132,7 @@ export default function Submissions() {
                     </TableCell>
                     <TableCell>
                       <span className="text-sm text-muted-foreground">
-                        {format(submission.submittedAt, 'MMM d, yyyy h:mm a')}
+                        {format(new Date(submission.submittedAt), 'MMM d, yyyy h:mm a')}
                       </span>
                     </TableCell>
                     <TableCell>
@@ -147,14 +170,9 @@ export default function Submissions() {
                     </TableCell>
                   </TableRow>
                 );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-
-        {filteredSubmissions.length === 0 && (
-          <div className="text-center py-12">
-            <p className="text-muted-foreground">No submissions found</p>
+                })}
+              </TableBody>
+            </Table>
           </div>
         )}
       </div>

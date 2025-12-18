@@ -7,8 +7,11 @@ import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Courses from "./pages/Courses";
+import CreateCourse from "./pages/CreateCourse";
+import CourseDetail from "./pages/CourseDetail";
 import Exams from "./pages/Exams";
 import CreateExam from "./pages/CreateExam";
+import ExamDetail from "./pages/ExamDetail";
 import Submissions from "./pages/Submissions";
 import SubmissionDetail from "./pages/SubmissionDetail";
 import SubmitExam from "./pages/SubmitExam";
@@ -36,8 +39,11 @@ function AppRoutes() {
       {/* Protected Routes */}
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/courses" element={<ProtectedRoute><Courses /></ProtectedRoute>} />
+      <Route path="/courses/new" element={<ProtectedRoute><CreateCourse /></ProtectedRoute>} />
+      <Route path="/courses/:courseId" element={<ProtectedRoute><CourseDetail /></ProtectedRoute>} />
       <Route path="/exams" element={<ProtectedRoute><Exams /></ProtectedRoute>} />
       <Route path="/exams/new" element={<ProtectedRoute><CreateExam /></ProtectedRoute>} />
+      <Route path="/exams/:examId" element={<ProtectedRoute><ExamDetail /></ProtectedRoute>} />
       <Route path="/submissions" element={<ProtectedRoute><Submissions /></ProtectedRoute>} />
       <Route path="/submissions/:id" element={<ProtectedRoute><SubmissionDetail /></ProtectedRoute>} />
       
