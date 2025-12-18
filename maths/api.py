@@ -119,35 +119,44 @@ def user_to_response(user: models.User) -> schemas.UserResponse:
 @app.on_event("startup")
 def startup_event():
     """Initialize database on startup"""
-    init_db()
-    
-    # Create demo users if database is empty
-    db = next(get_db())
-    if db.query(models.User).count() == 0:
-        # Create demo professor
-        professor = models.User(
-            name="Dr. Sarah Chen",
-            email="professor@university.edu",
-            password_hash=get_password_hash("password"),
-            role=models.UserRole.PROFESSOR
-        )
-        # Create demo student
-        student = models.User(
-            name="Alex Johnson",
-            email="student@university.edu",
-            password_hash=get_password_hash("password"),
-            role=models.UserRole.STUDENT
-        )
-        # Create demo admin
-        admin = models.User(
-            name="System Admin",
-            email="admin@university.edu",
-            password_hash=get_password_hash("password"),
-            role=models.UserRole.ADMIN
-        )
-        db.add_all([professor, student, admin])
-        db.commit()
-        print("✅ Created demo users (password: 'password')")
+    try:
+        init_db()
+        
+        # Create demo users if database is empty
+        db = next(get_db())
+        try:
+            if db.query(models.User).count() == 0:
+                # Create demo professor
+                professor = models.User(
+                    name="Dr. Sarah Chen",
+                    email="professor@university.edu",
+                    password_hash=get_password_hash("password"),
+                    role=models.UserRole.PROFESSOR
+                )
+                # Create demo student
+                student = models.User(
+                    name="Alex Johnson",
+                    email="student@university.edu",
+                    password_hash=get_password_hash("password"),
+                    role=models.UserRole.STUDENT
+                )
+                # Create demo admin
+                admin = models.User(
+                    name="System Admin",
+                    email="admin@university.edu",
+                    password_hash=get_password_hash("password"),
+                    role=models.UserRole.ADMIN
+                )
+                db.add_all([professor, student, admin])
+                db.commit()
+                print("✅ Created demo users (password: 'password')")
+        except Exception as e:
+            print(f"⚠️ Warning: Could not create demo users: {e}")
+        finally:
+            db.close()
+    except Exception as e:
+        print(f"⚠️ Warning: Database initialization error: {e}")
+        print("App will continue but database features may not work.")
 
 
 
