@@ -5,6 +5,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, status, F
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
+from sqlalchemy.sql import func
 from typing import List, Optional
 import os
 from pathlib import Path
