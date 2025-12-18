@@ -1,8 +1,9 @@
 [phases.setup]
-nixPkgs = ["python311", "tesseract", "poppler_utils"]
+nixPkgs = ["python311"]
 
 [phases.install]
 cmds = [
+  "apt-get update && apt-get install -y tesseract-ocr libtesseract-dev poppler-utils libglib2.0-0 || true",
   "pip install --upgrade pip",
   "pip install -r requirements.txt"
 ]
