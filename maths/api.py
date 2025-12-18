@@ -53,8 +53,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize OCR processor
-ocr_processor = OCRProcessor(language="en", dpi=300, psm=6, use_easyocr=True)
+# Initialize OCR processor lazily to avoid startup failures
+_ocr_processor = None
+
+def get_ocr_processor():
+    """Get or create OCR processor instance"""
+    global _ocr_processor
+    if _ocr_processor is None:
+        try:
+            _ocr_processor = OCRProcessor(language="en", dpi=300, psm=6, use_easyocr=True)
+        except Exception as e:
+            print(f"⚠️ Warning: OCR processor initialization failed: {e}")
+            print("Falling back to OCR processor without EasyOCR")
+            _ocr_processor = OCRProcessor(language="en", dpi=300, psm=6, use_easyocr=False)
+    return _ocr_processor
 
 
 
@@ -1006,7 +1018,7 @@ async def grade_submission(
         with open(image_path, "rb") as f:
             image_bytes = f.read()
         
-        ocr_result = ocr_processor.extract_steps_from_file(
+        ocr_result = get_ocr_processor().extract_steps_from_file(
             image_bytes,
             image_path.name
         )
