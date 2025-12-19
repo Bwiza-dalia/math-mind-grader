@@ -18,7 +18,7 @@ pyjwt>=2.8.0
 
 # OCR
 pytesseract>=0.3.10
-easyocr>=1.7.0
+# easyocr>=1.7.0  # Commented out - too large for Railway builds, installs 2GB+ of CUDA packages
 
 # Image processing
 Pillow>=10.0.0
